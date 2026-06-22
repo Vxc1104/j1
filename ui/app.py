@@ -153,6 +153,7 @@ class J1App(ctk.CTk):
         self.configure(fg_color=BG)
         self.history = load_history()
         self.is_listening = False
+        self.conversation_active = False
         self.wake_stop = threading.Event()
         self._build_ui()
         self._start_reminder_checker()
@@ -297,10 +298,10 @@ class J1App(ctk.CTk):
 
     def _run_wake_word(self):
         from voice.wakeword import listen_for_wakeword
-        listen_for_wakeword(
-            callback=lambda: self.after(0, self._on_mic_press),
-            stop_event=self.wake_stop,
-        )
+        def on_wake():
+            if not self.conversation_active:
+                self.after(0, self._on_mic_press)
+        listen_for_wakeword(callback=on_wake, stop_event=self.wake_stop)
 
     def _start_reminder_checker(self):
         def check():
@@ -335,28 +336,45 @@ class J1App(ctk.CTk):
             lbl.configure(text_color=GREEN if conn["check"]() else RED)
 
     def _on_mic_press(self):
-        if self.is_listening:
-            return
-        self.is_listening = True
-        self.mic_btn.configure(text="⏹  Aufnahme...", fg_color=RED)
-        self._set_status("Höre zu...", ACCENT)
-        threading.Thread(target=self._listen_and_respond, daemon=True).start()
-
-    def _listen_and_respond(self):
-        try:
-            audio = record_until_silence()
-            self._set_status("Transkribiere...", YELLOW)
-            text = transcribe(audio)
-            if text:
-                self.after(0, lambda: self._add_message("user", text))
-                self._process_message(text)
-        except Exception as e:
-            self._set_status(f"Fehler: {e}", RED)
-        finally:
+        if self.conversation_active:
+            # Gespräch stoppen
+            self.conversation_active = False
             self.is_listening = False
-            self.after(0, lambda: self.mic_btn.configure(text="🎙  Sprechen", fg_color=ACCENT))
-            if self.wake_active:
-                self._set_status("Warte auf 'Hey J1'...", GREEN)
+            self.mic_btn.configure(text="🎙  Sprechen", fg_color=ACCENT)
+            self._set_status("Gespräch beendet.")
+            return
+
+        # Gespräch starten
+        self.conversation_active = True
+        self.mic_btn.configure(text="⏹  Stoppen", fg_color=RED)
+        threading.Thread(target=self._conversation_loop, daemon=True).start()
+
+    def _conversation_loop(self):
+        """Dauergespräch: hören → antworten → hören → ... bis Stopp gedrückt."""
+        while self.conversation_active:
+            self.is_listening = True
+            self.after(0, lambda: self._set_status("Höre zu...", ACCENT))
+            try:
+                audio = record_until_silence()
+                if not self.conversation_active:
+                    break
+                self.after(0, lambda: self._set_status("Transkribiere...", YELLOW))
+                text = transcribe(audio)
+                if not text or not text.strip():
+                    continue
+                self.after(0, lambda t=text: self._add_message("user", t))
+                self._process_message(text)
+            except Exception as e:
+                self.after(0, lambda err=e: self._set_status(f"Fehler: {err}", RED))
+                break
+
+        self.is_listening = False
+        self.conversation_active = False
+        self.after(0, lambda: self.mic_btn.configure(text="🎙  Sprechen", fg_color=ACCENT))
+        if self.wake_active:
+            self._set_status("Warte auf 'Hey J1'...", GREEN)
+        else:
+            self._set_status("Bereit")
 
     def _on_text_submit(self, event=None):
         text = self.text_input.get().strip()

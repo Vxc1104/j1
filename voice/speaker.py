@@ -5,9 +5,9 @@ import asyncio
 import tempfile
 
 
-VOICE = os.getenv("TTS_VOICE", "de-DE-ConradNeural")
-RATE = os.getenv("TTS_RATE", "-5%")   # etwas langsamer = ruhiger
-PITCH = os.getenv("TTS_PITCH", "-8Hz") # tiefer = Jarvis-Feeling
+VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
+RATE  = os.getenv("TTS_RATE",  "-3%")   # leicht langsamer = klarer
+PITCH = os.getenv("TTS_PITCH", "-6Hz")  # etwas tiefer = Jarvis-Feeling
 
 
 def speak(text: str):
