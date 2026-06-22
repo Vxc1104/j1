@@ -6,8 +6,7 @@ from dotenv import load_dotenv, set_key
 load_dotenv()
 
 from voice.listener import record_until_silence, transcribe
-from voice.speaker import speak
-import voice.speaker as _speaker
+from voice.speaker import speak, is_speaking
 from brain.claude import chat
 from brain.memory import load_history, save_history
 from integrations.reminders import get_due_reminders
@@ -360,8 +359,8 @@ class J1App(ctk.CTk):
         """Dauergespräch: hören → antworten → hören → ... bis Stopp gedrückt."""
         import time
         while self.conversation_active:
-            # Wait until J1 has finished speaking before listening again
-            while _speaker.is_speaking:
+            # Warten bis J1 fertig gesprochen hat
+            while is_speaking():
                 time.sleep(0.1)
 
             self.is_listening = True
@@ -370,8 +369,8 @@ class J1App(ctk.CTk):
                 audio = record_until_silence()
                 if not self.conversation_active:
                     break
-                # Double-check we're not catching J1's own voice tail
-                if _speaker.is_speaking:
+                # Nochmal prüfen — kein Echo aufnehmen
+                if is_speaking():
                     continue
                 self.after(0, lambda: self._set_status("Transkribiere...", YELLOW))
                 text = transcribe(audio)
