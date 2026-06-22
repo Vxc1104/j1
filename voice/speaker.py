@@ -6,12 +6,12 @@ import asyncio
 import tempfile
 
 VOICE = os.getenv("TTS_VOICE", "de-DE-KillianNeural")
-RATE  = os.getenv("TTS_RATE",  "-8%")
-PITCH = os.getenv("TTS_PITCH", "-14Hz")
+BASE_RATE  = os.getenv("TTS_RATE",  "-4%")
+BASE_PITCH = os.getenv("TTS_PITCH", "-6Hz")
 
 
 def clean_text(text: str) -> str:
-    """Bereinigt Text für natürliche Sprachausgabe."""
+    """Bereinigt Text — entfernt Markdown und Sonderzeichen."""
     text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
     text = re.sub(r'#{1,6}\s*', '', text)
     text = re.sub(r'`{1,3}.*?`{1,3}', '', text, flags=re.DOTALL)
@@ -19,33 +19,95 @@ def clean_text(text: str) -> str:
     text = re.sub(r'^\s*[-•*]\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'https?://\S+', '', text)
-    text = re.sub(r'[<>]', '', text)
+    text = re.sub(r'[<>&]', '', text)
     text = re.sub(r'[^\w\s.,!?;:\-äöüÄÖÜß\'\"()\n]', '', text)
-    text = re.sub(r'\n+', '. ', text)
+    text = re.sub(r'\n+', ' ', text)
     text = re.sub(r'\s+', ' ', text)
     text = re.sub(r'\.\.+', '.', text)
     return text.strip()
 
 
-def speak(text: str):
-    provider = os.getenv("TTS_PROVIDER", "edge")
+def text_to_ssml(text: str) -> str:
+    """
+    Wandelt Text in SSML um — natürliche Pausen, Betonung,
+    Fragen gehen hoch, Satzenden gehen runter.
+    """
     text = clean_text(text)
     if not text:
+        return ""
+
+    # Gedankenpausen bei Gedankenstrichen
+    text = re.sub(r'\s*—\s*', ' <break time="250ms"/> ', text)
+    text = re.sub(r'\s*\.\.\.\s*', '<break time="400ms"/> ', text)
+
+    # Sätze aufsplitten
+    chunks = re.split(r'(?<=[.!?])\s+', text)
+    parts = []
+
+    for chunk in chunks:
+        c = chunk.strip()
+        if not c:
+            continue
+
+        if c.endswith('?'):
+            # Fragen: leicht höher und langsamer am Ende
+            parts.append(
+                f'<prosody pitch="+6Hz" rate="-2%">{c}</prosody>'
+                f'<break time="450ms"/>'
+            )
+        elif c.endswith('!'):
+            # Ausrufe: etwas lebhafter
+            parts.append(
+                f'<prosody pitch="+3Hz" rate="+3%">{c}</prosody>'
+                f'<break time="380ms"/>'
+            )
+        else:
+            # Normale Sätze: natürliche Komma-Pausen einbauen
+            c_with_breaks = re.sub(r',\s+', ', <break time="180ms"/> ', c)
+            c_with_breaks = re.sub(r';\s+', '; <break time="220ms"/> ', c_with_breaks)
+            parts.append(
+                f'<prosody>{c_with_breaks}</prosody>'
+                f'<break time="350ms"/>'
+            )
+
+    inner = ' '.join(parts)
+
+    return (
+        f'<speak version="1.0" '
+        f'xmlns="http://www.w3.org/2001/10/synthesis" '
+        f'xml:lang="de-DE">'
+        f'<voice name="{VOICE}">'
+        f'<prosody rate="{BASE_RATE}" pitch="{BASE_PITCH}">'
+        f'{inner}'
+        f'</prosody>'
+        f'</voice>'
+        f'</speak>'
+    )
+
+
+def speak(text: str):
+    provider = os.getenv("TTS_PROVIDER", "edge")
+    if not text or not text.strip():
         return
     if provider == "elevenlabs":
-        _speak_elevenlabs(text)
+        _speak_elevenlabs(clean_text(text))
     elif provider == "macos":
-        _speak_macos(text)
+        _speak_macos(clean_text(text))
     else:
         _speak_edge(text)
 
 
 def _speak_edge(text: str):
-    """Edge TTS — klares dunkles Deutsch, Jarvis-Stimme."""
+    """Edge TTS mit SSML — natürliche Intonation, Jarvis-Stimme."""
     import edge_tts
 
+    ssml = text_to_ssml(text)
+    if not ssml:
+        return
+
     async def _run():
-        communicate = edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH)
+        # Kein voice/rate/pitch Parameter — alles im SSML
+        communicate = edge_tts.Communicate(ssml)
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             tmp_path = f.name
         await communicate.save(tmp_path)
@@ -57,7 +119,7 @@ def _speak_edge(text: str):
 
 def _speak_macos(text: str):
     clean = text.replace('"', "'")
-    subprocess.run(["say", "-v", "Anna", "-r", "165", clean], check=False)
+    subprocess.run(["say", "-v", "Anna", "-r", "160", clean], check=False)
 
 
 def _speak_elevenlabs(text: str):
