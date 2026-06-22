@@ -262,8 +262,14 @@ class J1App(ctk.CTk):
         threading.Thread(target=self._do_greet, daemon=True).start()
 
     def _do_greet(self):
-        from brain.claude import chat
-        answer, self.history = chat("Begrüße mich kurz beim Start. Maximal 2 Sätze.", self.history)
+        import random
+        greetings = [
+            "Guten Tag — J1 ist einsatzbereit. Was kann ich für Sie tun?",
+            "Alles bereit. Womit kann ich Ihnen heute helfen?",
+            "J1 hier. Ich bin online — was steht an?",
+            "Guten Tag. Alle Systeme laufen. Was brauchen Sie?",
+        ]
+        answer = random.choice(greetings)
         self.after(0, lambda: self._add_message("assistant", answer))
         speak(answer)
 

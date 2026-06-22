@@ -43,12 +43,29 @@ def get_memory_summary() -> str:
 
 def save_history(history: list):
     os.makedirs(DATA_DIR, exist_ok=True)
+    # Nur user/assistant Text-Messages speichern — keine Tool-Calls
+    clean = [
+        m for m in history[-40:]
+        if m.get("role") in ("user", "assistant")
+        and isinstance(m.get("content"), str)
+        and m.get("content", "").strip()
+    ]
     with open(HISTORY_FILE, "w") as f:
-        json.dump(history[-40:], f, ensure_ascii=False, indent=2)
+        json.dump(clean, f, ensure_ascii=False, indent=2)
 
 
 def load_history() -> list:
     if not os.path.exists(HISTORY_FILE):
         return []
-    with open(HISTORY_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(HISTORY_FILE, "r") as f:
+            data = json.load(f)
+        # Nur valide user/assistant Messages laden
+        return [
+            m for m in data
+            if m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+            and m.get("content", "").strip()
+        ]
+    except Exception:
+        return []

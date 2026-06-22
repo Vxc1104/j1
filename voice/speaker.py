@@ -89,6 +89,8 @@ def speak(text: str):
     provider = os.getenv("TTS_PROVIDER", "edge")
     if not text or not text.strip():
         return
+    # Sicherheit: nie mehr als 800 Zeichen sprechen (kein Prompt-Leak)
+    text = text[:800]
     if provider == "elevenlabs":
         _speak_elevenlabs(clean_text(text))
     elif provider == "macos":
