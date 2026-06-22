@@ -4,7 +4,7 @@ import subprocess
 import threading
 import tempfile
 
-VOICE = os.getenv("TTS_VOICE", "de-DE-ConradNeural")
+VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
 RATE  = os.getenv("TTS_RATE",  "-3%")
 PITCH = os.getenv("TTS_PITCH", "+0Hz")
 
