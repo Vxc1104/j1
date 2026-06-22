@@ -6,8 +6,8 @@ import asyncio
 import tempfile
 
 VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
-RATE  = os.getenv("TTS_RATE",  "+0%")
-PITCH = os.getenv("TTS_PITCH", "-2Hz")
+RATE  = os.getenv("TTS_RATE",  "-5%")   # leicht langsamer = klarer und wärmer
+PITCH = os.getenv("TTS_PITCH", "-4Hz")  # minimal tiefer = Jarvis-Charakter
 
 
 def clean_text(text: str) -> str:
