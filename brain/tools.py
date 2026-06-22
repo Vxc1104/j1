@@ -22,6 +22,9 @@ except Exception:
 from integrations import n8n
 from integrations import news
 from integrations import files
+from integrations import weather
+from integrations import reminders
+from brain.memory import save_memory, forget_memory, get_memory_summary
 
 TOOLS = [
     {
@@ -175,11 +178,85 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "webhook_name": {"type": "string", "description": "Name des Webhooks"},
-                    "payload": {"type": "object", "description": "Optionale Daten für den Workflow"},
+                    "webhook_name": {"type": "string"},
+                    "payload": {"type": "object"},
                 },
                 "required": ["webhook_name"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Holt das aktuelle Wetter für eine Stadt (kostenlos)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "Stadtname (Standard: Zurich)"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_reminder",
+            "description": "Setzt eine Erinnerung für einen bestimmten Zeitpunkt",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Was soll erinnert werden"},
+                    "datetime": {"type": "string", "description": "ISO 8601 Datum/Zeit, z.B. 2024-12-01T10:00:00"},
+                },
+                "required": ["text", "datetime"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_reminders",
+            "description": "Zeigt alle ausstehenden Erinnerungen",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember",
+            "description": "Speichert eine wichtige Information dauerhaft im Gedächtnis von J1",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Bezeichnung/Schlüssel der Information"},
+                    "value": {"type": "string", "description": "Der zu merkende Inhalt"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "forget",
+            "description": "Löscht eine gespeicherte Information aus dem Gedächtnis",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"}
+                },
+                "required": ["key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_memory",
+            "description": "Zeigt alles was J1 sich gemerkt hat",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
 ]
@@ -258,6 +335,26 @@ def execute_tool(name: str, args: dict) -> str:
         elif name == "trigger_n8n_workflow":
             result = n8n.trigger_webhook(args["webhook_name"], args.get("payload", {}))
             return json.dumps(result, ensure_ascii=False)
+
+        elif name == "get_weather":
+            result = weather.get_weather(args.get("city", "Zurich"))
+            return json.dumps(result, ensure_ascii=False)
+
+        elif name == "set_reminder":
+            return reminders.add_reminder(args["text"], args["datetime"])
+
+        elif name == "get_reminders":
+            result = reminders.get_upcoming_reminders()
+            return json.dumps(result, ensure_ascii=False)
+
+        elif name == "remember":
+            return save_memory(args["key"], args["value"])
+
+        elif name == "forget":
+            return forget_memory(args["key"])
+
+        elif name == "recall_memory":
+            return get_memory_summary()
 
         else:
             return json.dumps({"error": f"Unbekanntes Tool: {name}"})

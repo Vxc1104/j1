@@ -2,6 +2,7 @@ import os
 import json
 from groq import Groq
 from brain.tools import TOOLS, execute_tool
+from brain.memory import load_memory, save_history, load_history
 
 SYSTEM_PROMPT = """Du bist J1 — der persönliche KI-Assistent. Dein Vorbild ist JARVIS aus Iron Man, deutsche Version.
 
@@ -27,9 +28,17 @@ Immer auf Deutsch antworten. Immer kurz und gesprochen — nie wie ein Textdokum
 def get_client():
     provider = os.getenv("LLM_PROVIDER", "groq")
     if provider == "claude":
-        import anthropic
         return None, "claude"
     return Groq(api_key=os.getenv("GROQ_API_KEY")), "groq"
+
+
+def get_system_prompt() -> str:
+    mem = load_memory()
+    mem_block = ""
+    if mem:
+        lines = [f"  - {k}: {v['value']}" for k, v in mem.items()]
+        mem_block = "\n\nGespeichertes Wissen:\n" + "\n".join(lines)
+    return SYSTEM_PROMPT + mem_block
 
 
 def chat(user_message: str, history: list[dict] = None) -> tuple[str, list[dict]]:
@@ -48,7 +57,7 @@ def _groq_chat(client: Groq, messages: list[dict]) -> tuple[str, list[dict]]:
 
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+        messages=[{"role": "system", "content": get_system_prompt()}] + messages,
         tools=TOOLS,
         tool_choice="auto",
         max_tokens=1024,
@@ -73,7 +82,7 @@ def _groq_chat(client: Groq, messages: list[dict]) -> tuple[str, list[dict]]:
 
         final = client.chat.completions.create(
             model=model,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+            messages=[{"role": "system", "content": get_system_prompt()}] + messages,
             max_tokens=1024,
         )
         answer = final.choices[0].message.content
@@ -81,6 +90,7 @@ def _groq_chat(client: Groq, messages: list[dict]) -> tuple[str, list[dict]]:
         answer = msg.content
 
     messages.append({"role": "assistant", "content": answer})
+    save_history(messages)
     return answer, messages
 
 

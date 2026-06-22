@@ -8,6 +8,8 @@ load_dotenv()
 from voice.listener import record_until_silence, transcribe
 from voice.speaker import speak
 from brain.claude import chat
+from brain.memory import load_history, save_history
+from integrations.reminders import get_due_reminders
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -20,53 +22,40 @@ TEXT   = "#e0e8ff"
 GREEN  = "#00ff88"
 RED    = "#ff4455"
 GREY   = "#3a3a55"
+YELLOW = "#ffaa00"
 ENV    = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 CONNECTORS = [
     {
-        "id":    "groq",
-        "label": "Groq (KI & Sprache)",
-        "icon":  "⚡",
-        "env":   "GROQ_API_KEY",
+        "id": "groq", "label": "Groq (KI & Sprache)", "icon": "⚡",
+        "env": "GROQ_API_KEY",
         "check": lambda: bool(os.getenv("GROQ_API_KEY")),
-        "placeholder": "gsk_...",
-        "link":  "https://console.groq.com",
+        "placeholder": "gsk_...", "link": "https://console.groq.com",
     },
     {
-        "id":    "google",
-        "label": "Google Calendar & Gmail",
-        "icon":  "📅",
-        "env":   None,
-        "check": lambda: os.path.exists(os.path.join(os.path.dirname(os.path.dirname(__file__)), "credentials.json")),
-        "placeholder": "credentials.json im Projektordner ablegen",
-        "link":  "https://console.cloud.google.com",
+        "id": "google", "label": "Google Calendar & Gmail", "icon": "📅",
+        "env": None,
+        "check": lambda: os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "credentials.json")),
+        "placeholder": "credentials.json im j1/ Ordner ablegen",
+        "link": "https://console.cloud.google.com",
     },
     {
-        "id":    "notion",
-        "label": "Notion",
-        "icon":  "📝",
-        "env":   "NOTION_API_KEY",
+        "id": "notion", "label": "Notion", "icon": "📝",
+        "env": "NOTION_API_KEY",
         "check": lambda: bool(os.getenv("NOTION_API_KEY")),
-        "placeholder": "secret_...",
-        "link":  "https://www.notion.so/my-integrations",
+        "placeholder": "secret_...", "link": "https://www.notion.so/my-integrations",
     },
     {
-        "id":    "n8n",
-        "label": "n8n Workflows",
-        "icon":  "🔗",
-        "env":   "N8N_WEBHOOK_URL",
+        "id": "n8n", "label": "n8n Workflows", "icon": "🔗",
+        "env": "N8N_WEBHOOK_URL",
         "check": lambda: os.getenv("N8N_WEBHOOK_URL", "").startswith("http"),
-        "placeholder": "http://localhost:5678/webhook",
-        "link":  "http://localhost:5678",
+        "placeholder": "http://localhost:5678/webhook", "link": "http://localhost:5678",
     },
     {
-        "id":    "elevenlabs",
-        "label": "ElevenLabs (Premium Voice)",
-        "icon":  "🎙",
-        "env":   "ELEVENLABS_API_KEY",
+        "id": "elevenlabs", "label": "ElevenLabs (Premium Voice)", "icon": "🎙",
+        "env": "ELEVENLABS_API_KEY",
         "check": lambda: bool(os.getenv("ELEVENLABS_API_KEY")),
-        "placeholder": "sk_...",
-        "link":  "https://elevenlabs.io",
+        "placeholder": "sk_...", "link": "https://elevenlabs.io",
     },
 ]
 
@@ -75,7 +64,7 @@ class ConnectorsPanel(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Konnektoren")
-        self.geometry("520x620")
+        self.geometry("520x640")
         self.configure(fg_color=BG)
         self.resizable(False, False)
         self.lift()
@@ -83,107 +72,70 @@ class ConnectorsPanel(ctk.CTkToplevel):
         self._build()
 
     def _build(self):
-        ctk.CTkLabel(
-            self, text="Konnektoren",
+        ctk.CTkLabel(self, text="Konnektoren",
             font=ctk.CTkFont(size=22, weight="bold"), text_color=ACCENT
         ).pack(pady=(24, 4))
-
-        ctk.CTkLabel(
-            self, text="Verbinde deine Dienste mit J1",
+        ctk.CTkLabel(self, text="Verbinde deine Dienste mit J1",
             font=ctk.CTkFont(size=13), text_color=GREY
-        ).pack(pady=(0, 16))
+        ).pack(pady=(0, 12))
 
         scroll = ctk.CTkScrollableFrame(self, fg_color=BG, width=480)
         scroll.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-
-        self.entries = {}
         for conn in CONNECTORS:
-            self._build_connector(scroll, conn)
+            self._build_card(scroll, conn)
 
-    def _build_connector(self, parent, conn: dict):
+    def _build_card(self, parent, conn):
         connected = conn["check"]()
-        dot_color = GREEN if connected else RED
-        status_text = "Verbunden" if connected else "Nicht verbunden"
-
         card = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=12)
         card.pack(fill="x", pady=6, padx=4)
 
-        # Header row
-        header = ctk.CTkFrame(card, fg_color="transparent")
-        header.pack(fill="x", padx=14, pady=(12, 4))
-
-        ctk.CTkLabel(
-            header, text=f"{conn['icon']}  {conn['label']}",
+        hdr = ctk.CTkFrame(card, fg_color="transparent")
+        hdr.pack(fill="x", padx=14, pady=(12, 6))
+        ctk.CTkLabel(hdr, text=f"{conn['icon']}  {conn['label']}",
             font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT
         ).pack(side="left")
+        dot_color = GREEN if connected else RED
+        status = "Verbunden" if connected else "Nicht verbunden"
+        sf = ctk.CTkFrame(hdr, fg_color="transparent")
+        sf.pack(side="right")
+        ctk.CTkLabel(sf, text="●", text_color=dot_color, font=ctk.CTkFont(size=16)).pack(side="left", padx=(0,4))
+        ctk.CTkLabel(sf, text=status, font=ctk.CTkFont(size=12), text_color=dot_color).pack(side="left")
 
-        status_frame = ctk.CTkFrame(header, fg_color="transparent")
-        status_frame.pack(side="right")
-
-        ctk.CTkLabel(
-            status_frame, text="●", text_color=dot_color,
-            font=ctk.CTkFont(size=16)
-        ).pack(side="left", padx=(0, 4))
-        ctk.CTkLabel(
-            status_frame, text=status_text,
-            font=ctk.CTkFont(size=12), text_color=dot_color
-        ).pack(side="left")
-
-        # Google: special case — file, not API key
         if conn["id"] == "google":
-            hint = ctk.CTkLabel(
-                card, text="credentials.json aus Google Cloud Console herunterladen\nund im j1/ Projektordner ablegen.",
+            ctk.CTkLabel(card,
+                text="credentials.json aus Google Cloud Console herunterladen\nund im j1/ Projektordner ablegen.",
                 font=ctk.CTkFont(size=12), text_color=GREY, justify="left"
-            )
-            hint.pack(anchor="w", padx=14, pady=(0, 6))
-
-            ctk.CTkButton(
-                card, text="Google Cloud Console öffnen →",
-                font=ctk.CTkFont(size=12),
-                fg_color="transparent", text_color=ACCENT,
-                hover_color=BG3, border_width=1, border_color=ACCENT,
-                height=30, corner_radius=8,
+            ).pack(anchor="w", padx=14, pady=(0,6))
+            ctk.CTkButton(card, text="Google Cloud Console öffnen →",
+                font=ctk.CTkFont(size=12), fg_color="transparent",
+                text_color=ACCENT, hover_color=BG3, border_width=1,
+                border_color=ACCENT, height=30, corner_radius=8,
                 command=lambda: subprocess.run(["open", conn["link"]])
-            ).pack(anchor="w", padx=14, pady=(0, 12))
+            ).pack(anchor="w", padx=14, pady=(0,12))
             return
 
-        # API-Key Input
         row = ctk.CTkFrame(card, fg_color="transparent")
-        row.pack(fill="x", padx=14, pady=(4, 12))
-
-        entry = ctk.CTkEntry(
-            row,
-            placeholder_text=conn["placeholder"],
-            fg_color=BG3, text_color=TEXT,
-            border_color="#2233aa", height=36, corner_radius=8,
-            show="*" if connected else "",
+        row.pack(fill="x", padx=14, pady=(0, 8))
+        entry = ctk.CTkEntry(row, placeholder_text=conn["placeholder"],
+            fg_color=BG3, text_color=TEXT, border_color="#2233aa",
+            height=36, corner_radius=8, show="*" if connected else "",
         )
         entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
         if connected and conn["env"]:
             entry.insert(0, os.getenv(conn["env"], ""))
-
-        self.entries[conn["id"]] = (entry, conn)
-
-        save_btn = ctk.CTkButton(
-            row, text="Speichern",
+        ctk.CTkButton(row, text="Speichern",
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=ACCENT, text_color=BG,
-            hover_color="#00aacc", width=90, height=36, corner_radius=8,
+            fg_color=ACCENT, text_color=BG, hover_color="#00aacc",
+            width=90, height=36, corner_radius=8,
             command=lambda c=conn, e=entry: self._save(c, e)
-        )
-        save_btn.pack(side="right")
-
-        ctk.CTkButton(
-            card, text=f"Anleitung: {conn['link']} →",
-            font=ctk.CTkFont(size=11),
-            fg_color="transparent", text_color=GREY,
-            hover_color=BG3, border_width=0,
-            height=24,
+        ).pack(side="right")
+        ctk.CTkButton(card, text=f"↗ {conn['link']}",
+            font=ctk.CTkFont(size=11), fg_color="transparent",
+            text_color=GREY, hover_color=BG3, height=24,
             command=lambda url=conn["link"]: subprocess.run(["open", url])
         ).pack(anchor="w", padx=14, pady=(0, 8))
 
-    def _save(self, conn: dict, entry: ctk.CTkEntry):
+    def _save(self, conn, entry):
         value = entry.get().strip()
         if not value or not conn["env"]:
             return
@@ -197,120 +149,190 @@ class J1App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("J1 — Persönlicher Assistent")
-        self.geometry("720x820")
+        self.geometry("740x840")
         self.configure(fg_color=BG)
-        self.history = []
+        self.history = load_history()
         self.is_listening = False
+        self.wake_stop = threading.Event()
         self._build_ui()
+        self._start_reminder_checker()
+        self._greet()
 
     def _build_ui(self):
         # Top bar
-        topbar = ctk.CTkFrame(self, fg_color=BG2, height=48, corner_radius=0)
+        topbar = ctk.CTkFrame(self, fg_color=BG2, height=50, corner_radius=0)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
 
-        ctk.CTkLabel(
-            topbar, text="J1",
+        ctk.CTkLabel(topbar, text="J1",
             font=ctk.CTkFont(size=18, weight="bold"), text_color=ACCENT
         ).pack(side="left", padx=20)
 
-        ctk.CTkButton(
-            topbar, text="⚙  Konnektoren",
-            font=ctk.CTkFont(size=13),
-            fg_color="transparent", text_color=TEXT,
-            hover_color=BG3, border_width=1, border_color=GREY,
-            height=30, width=140, corner_radius=8,
-            command=self._open_connectors
-        ).pack(side="right", padx=16, pady=9)
+        btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        btn_frame.pack(side="right", padx=12)
 
-        self._connector_dots(topbar)
+        ctk.CTkButton(btn_frame, text="📋 Briefing",
+            font=ctk.CTkFont(size=12), fg_color="transparent",
+            text_color=TEXT, hover_color=BG3, border_width=1,
+            border_color=GREY, height=30, width=100, corner_radius=8,
+            command=self._do_briefing
+        ).pack(side="left", padx=4)
+
+        ctk.CTkButton(btn_frame, text="⚙ Konnektoren",
+            font=ctk.CTkFont(size=12), fg_color="transparent",
+            text_color=TEXT, hover_color=BG3, border_width=1,
+            border_color=GREY, height=30, width=120, corner_radius=8,
+            command=lambda: ConnectorsPanel(self)
+        ).pack(side="left", padx=4)
+
+        self._dot_labels = []
+        dot_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        dot_frame.pack(side="left", padx=8)
+        for conn in CONNECTORS:
+            lbl = ctk.CTkLabel(dot_frame, text="●",
+                text_color=GREEN if conn["check"]() else RED,
+                font=ctk.CTkFont(size=13)
+            )
+            lbl.pack(side="left", padx=2)
+            self._dot_labels.append((lbl, conn))
 
         # Header
-        ctk.CTkLabel(
-            self, text="J1",
+        ctk.CTkLabel(self, text="J1",
             font=ctk.CTkFont(size=52, weight="bold"), text_color=ACCENT
-        ).pack(pady=(22, 2))
-
-        ctk.CTkLabel(
-            self, text="Persönlicher Assistent",
+        ).pack(pady=(20, 2))
+        ctk.CTkLabel(self, text="Persönlicher Assistent",
             font=ctk.CTkFont(size=13), text_color=GREY
-        ).pack(pady=(0, 14))
+        ).pack(pady=(0, 12))
 
         # Chat
         self.chat_frame = ctk.CTkScrollableFrame(
-            self, fg_color=BG2, corner_radius=12, width=660, height=380
+            self, fg_color=BG2, corner_radius=12, width=680, height=400
         )
         self.chat_frame.pack(padx=20, pady=8, fill="both", expand=True)
 
         # Status
-        self.status_label = ctk.CTkLabel(
-            self, text="Bereit",
+        self.status_label = ctk.CTkLabel(self, text="Bereit",
             font=ctk.CTkFont(size=12), text_color=GREY
         )
         self.status_label.pack(pady=4)
 
-        # Mic button
-        self.mic_btn = ctk.CTkButton(
-            self, text="🎙  Sprechen",
+        # Buttons row
+        btn_row = ctk.CTkFrame(self, fg_color=BG)
+        btn_row.pack(pady=8)
+
+        self.mic_btn = ctk.CTkButton(btn_row, text="🎙  Sprechen",
             font=ctk.CTkFont(size=17, weight="bold"),
-            fg_color=ACCENT, text_color=BG,
-            hover_color="#00aacc",
+            fg_color=ACCENT, text_color=BG, hover_color="#00aacc",
             width=200, height=56, corner_radius=28,
             command=self._on_mic_press
         )
-        self.mic_btn.pack(pady=12)
+        self.mic_btn.pack(side="left", padx=10)
+
+        self.wake_btn = ctk.CTkButton(btn_row, text="👂 Wake Word: OFF",
+            font=ctk.CTkFont(size=12),
+            fg_color=BG2, text_color=GREY, hover_color=BG3,
+            border_width=1, border_color=GREY,
+            width=150, height=56, corner_radius=28,
+            command=self._toggle_wake_word
+        )
+        self.wake_btn.pack(side="left", padx=10)
+        self.wake_active = False
 
         # Text input
-        input_frame = ctk.CTkFrame(self, fg_color=BG)
-        input_frame.pack(padx=20, pady=(0, 20), fill="x")
-
-        self.text_input = ctk.CTkEntry(
-            input_frame, placeholder_text="Oder tippe hier...",
+        inp = ctk.CTkFrame(self, fg_color=BG)
+        inp.pack(padx=20, pady=(0, 20), fill="x")
+        self.text_input = ctk.CTkEntry(inp,
+            placeholder_text="Oder tippe hier... (Enter zum Senden)",
             fg_color=BG2, text_color=TEXT, border_color="#2233aa",
             font=ctk.CTkFont(size=14), height=44, corner_radius=22
         )
         self.text_input.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.text_input.bind("<Return>", self._on_text_submit)
-
-        ctk.CTkButton(
-            input_frame, text="→",
+        ctk.CTkButton(inp, text="→",
             font=ctk.CTkFont(size=20, weight="bold"),
             fg_color=ACCENT, text_color=BG,
             width=44, height=44, corner_radius=22,
             command=self._on_text_submit
         ).pack(side="right")
 
-    def _connector_dots(self, parent):
-        dot_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        dot_frame.pack(side="right", padx=(0, 8))
-        for conn in CONNECTORS:
-            color = GREEN if conn["check"]() else RED
-            ctk.CTkLabel(
-                dot_frame, text="●", text_color=color,
-                font=ctk.CTkFont(size=12)
-            ).pack(side="left", padx=2)
+        self.bind("<space>", lambda e: self._on_mic_press() if self.focus_get() == self else None)
 
-    def _open_connectors(self):
-        ConnectorsPanel(self)
+    def _greet(self):
+        threading.Thread(target=self._do_greet, daemon=True).start()
+
+    def _do_greet(self):
+        from brain.claude import chat
+        answer, self.history = chat("Begrüße mich kurz beim Start. Maximal 2 Sätze.", self.history)
+        self.after(0, lambda: self._add_message("assistant", answer))
+        speak(answer)
+
+    def _do_briefing(self):
+        self._set_status("Briefing wird vorbereitet...", YELLOW)
+        threading.Thread(target=self._run_briefing, daemon=True).start()
+
+    def _run_briefing(self):
+        try:
+            from brain.briefing import build_morning_briefing
+            briefing = build_morning_briefing()
+            self.after(0, lambda: self._add_message("assistant", briefing))
+            self._set_status("Spricht...", ACCENT)
+            speak(briefing)
+        except Exception as e:
+            self.after(0, lambda: self._add_message("assistant", f"Briefing Fehler: {e}"))
+        finally:
+            self._set_status("Bereit")
+
+    def _toggle_wake_word(self):
+        if self.wake_active:
+            self.wake_stop.set()
+            self.wake_active = False
+            self.wake_btn.configure(text="👂 Wake Word: OFF", text_color=GREY, border_color=GREY)
+            self._set_status("Wake Word deaktiviert.")
+        else:
+            self.wake_stop.clear()
+            self.wake_active = True
+            self.wake_btn.configure(text="👂 Wake Word: ON", text_color=GREEN, border_color=GREEN)
+            self._set_status("Warte auf 'Hey J1'...", GREEN)
+            threading.Thread(target=self._run_wake_word, daemon=True).start()
+
+    def _run_wake_word(self):
+        from voice.wakeword import listen_for_wakeword
+        listen_for_wakeword(
+            callback=lambda: self.after(0, self._on_mic_press),
+            stop_event=self.wake_stop,
+        )
+
+    def _start_reminder_checker(self):
+        def check():
+            import time
+            while True:
+                due = get_due_reminders()
+                for r in due:
+                    msg = f"Erinnerung: {r['text']}"
+                    self.after(0, lambda m=msg: self._add_message("assistant", m))
+                    speak(msg)
+                time.sleep(60)
+        threading.Thread(target=check, daemon=True).start()
 
     def _add_message(self, role: str, text: str):
         color = "#1a2a4a" if role == "user" else "#0f1a2a"
         prefix = "Du" if role == "user" else "J1"
         anchor = "e" if role == "user" else "w"
-
         bubble = ctk.CTkFrame(self.chat_frame, fg_color=color, corner_radius=12)
         bubble.pack(fill="x", padx=10, pady=4, anchor=anchor)
-
-        ctk.CTkLabel(
-            bubble,
-            text=f"{prefix}:  {text}",
+        ctk.CTkLabel(bubble, text=f"{prefix}:  {text}",
             font=ctk.CTkFont(size=13), text_color=TEXT,
-            wraplength=560, justify="left", anchor="w"
+            wraplength=580, justify="left", anchor="w"
         ).pack(padx=12, pady=8, anchor="w")
+        self.chat_frame._parent_canvas.yview_moveto(1.0)
 
     def _set_status(self, text: str, color: str = None):
         self.status_label.configure(text=text, text_color=color or GREY)
         self.update()
+
+    def _refresh_dots(self):
+        for lbl, conn in self._dot_labels:
+            lbl.configure(text_color=GREEN if conn["check"]() else RED)
 
     def _on_mic_press(self):
         if self.is_listening:
@@ -323,7 +345,7 @@ class J1App(ctk.CTk):
     def _listen_and_respond(self):
         try:
             audio = record_until_silence()
-            self._set_status("Transkribiere...", "#ffaa00")
+            self._set_status("Transkribiere...", YELLOW)
             text = transcribe(audio)
             if text:
                 self.after(0, lambda: self._add_message("user", text))
@@ -333,6 +355,8 @@ class J1App(ctk.CTk):
         finally:
             self.is_listening = False
             self.after(0, lambda: self.mic_btn.configure(text="🎙  Sprechen", fg_color=ACCENT))
+            if self.wake_active:
+                self._set_status("Warte auf 'Hey J1'...", GREEN)
 
     def _on_text_submit(self, event=None):
         text = self.text_input.get().strip()
@@ -343,7 +367,7 @@ class J1App(ctk.CTk):
         threading.Thread(target=self._process_message, args=(text,), daemon=True).start()
 
     def _process_message(self, text: str):
-        self._set_status("J1 denkt...", "#ffaa00")
+        self._set_status("J1 denkt...", YELLOW)
         try:
             answer, self.history = chat(text, self.history)
             self.after(0, lambda: self._add_message("assistant", answer))
@@ -353,6 +377,11 @@ class J1App(ctk.CTk):
             self.after(0, lambda: self._add_message("assistant", f"Fehler: {e}"))
         finally:
             self._set_status("Bereit")
+
+    def destroy(self):
+        save_history(self.history)
+        self.wake_stop.set()
+        super().destroy()
 
 
 def main():
