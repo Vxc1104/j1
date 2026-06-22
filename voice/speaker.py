@@ -9,6 +9,9 @@ VOICE = os.getenv("TTS_VOICE", "de-DE-KillianNeural")
 BASE_RATE  = os.getenv("TTS_RATE",  "-4%")
 BASE_PITCH = os.getenv("TTS_PITCH", "-6Hz")
 
+# Global flag — True while J1 is speaking, so the mic loop skips recording
+is_speaking = False
+
 
 def clean_text(text: str) -> str:
     """Bereinigt Text — entfernt Markdown und Sonderzeichen."""
@@ -86,17 +89,24 @@ def text_to_ssml(text: str) -> str:
 
 
 def speak(text: str):
+    global is_speaking
     provider = os.getenv("TTS_PROVIDER", "edge")
     if not text or not text.strip():
         return
-    # Sicherheit: nie mehr als 800 Zeichen sprechen (kein Prompt-Leak)
+    # Safety: never speak more than 800 chars
     text = text[:800]
-    if provider == "elevenlabs":
-        _speak_elevenlabs(clean_text(text))
-    elif provider == "macos":
-        _speak_macos(clean_text(text))
-    else:
-        _speak_edge(text)
+    is_speaking = True
+    try:
+        if provider == "elevenlabs":
+            _speak_elevenlabs(clean_text(text))
+        elif provider == "macos":
+            _speak_macos(clean_text(text))
+        else:
+            _speak_edge(text)
+    finally:
+        import time
+        time.sleep(0.4)  # short buffer so mic doesn't catch the tail
+        is_speaking = False
 
 
 def _speak_edge(text: str):
