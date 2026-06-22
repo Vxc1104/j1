@@ -1,17 +1,40 @@
 import os
+import re
 import subprocess
 import threading
 import asyncio
 import tempfile
 
-
 VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
-RATE  = os.getenv("TTS_RATE",  "-3%")   # leicht langsamer = klarer
-PITCH = os.getenv("TTS_PITCH", "-6Hz")  # etwas tiefer = Jarvis-Feeling
+RATE  = os.getenv("TTS_RATE",  "+0%")
+PITCH = os.getenv("TTS_PITCH", "-2Hz")
+
+
+def clean_text(text: str) -> str:
+    """Bereinigt Text für natürliche Sprachausgabe."""
+    # Markdown entfernen
+    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    text = re.sub(r'#{1,6}\s*', '', text)
+    text = re.sub(r'`{1,3}(.*?)`{1,3}', r'\1', text)
+    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+    # Aufzählungszeichen entfernen
+    text = re.sub(r'^\s*[-•*]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    # URLs entfernen
+    text = re.sub(r'https?://\S+', '', text)
+    # Emojis entfernen
+    text = re.sub(r'[^\w\s.,!?;:\-äöüÄÖÜß\'\"()\n]', '', text)
+    # Mehrfache Leerzeichen/Zeilenumbrüche normalisieren
+    text = re.sub(r'\n+', '. ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 
 def speak(text: str):
     provider = os.getenv("TTS_PROVIDER", "edge")
+    text = clean_text(text)
+    if not text:
+        return
     if provider == "elevenlabs":
         _speak_elevenlabs(text)
     elif provider == "macos":
@@ -21,7 +44,7 @@ def speak(text: str):
 
 
 def _speak_edge(text: str):
-    """Microsoft Edge TTS — natürliche, menschliche Stimme (kostenlos)."""
+    """Microsoft Edge TTS — klares, natürliches Deutsch."""
     import edge_tts
 
     async def _run():
@@ -37,13 +60,11 @@ def _speak_edge(text: str):
 
 def _speak_macos(text: str):
     clean = text.replace('"', "'")
-    subprocess.run(["say", "-v", "Daniel", "-r", "185", clean], check=False)
+    subprocess.run(["say", "-v", "Anna", "-r", "170", clean], check=False)
 
 
 def _speak_elevenlabs(text: str):
     import requests
-    import sounddevice as sd
-    import soundfile as sf
 
     api_key = os.getenv("ELEVENLABS_API_KEY")
     voice_id = os.getenv("ELEVENLABS_VOICE_ID", "onwK4e9ZLuTAKqWW03F9")
@@ -51,16 +72,17 @@ def _speak_elevenlabs(text: str):
     response = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
         headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-        json={"text": text, "model_id": "eleven_turbo_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
+        json={
+            "text": text,
+            "model_id": "eleven_turbo_v2",
+            "voice_settings": {"stability": 0.6, "similarity_boost": 0.8},
+        },
     )
-
     if response.status_code == 200:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             f.write(response.content)
             tmp_path = f.name
-        data, samplerate = sf.read(tmp_path)
-        sd.play(data, samplerate)
-        sd.wait()
+        subprocess.run(["afplay", tmp_path], check=False)
         os.unlink(tmp_path)
     else:
         _speak_edge(text)
