@@ -5,9 +5,9 @@ import threading
 import asyncio
 import tempfile
 
-VOICE = os.getenv("TTS_VOICE", "de-DE-KillianNeural")
-BASE_RATE  = os.getenv("TTS_RATE",  "-4%")
-BASE_PITCH = os.getenv("TTS_PITCH", "-6Hz")
+VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
+BASE_RATE  = os.getenv("TTS_RATE",  "+0%")
+BASE_PITCH = os.getenv("TTS_PITCH", "+0Hz")
 
 # Global flag — True while J1 is speaking, so the mic loop skips recording
 is_speaking = False
