@@ -6,49 +6,92 @@ import asyncio
 import tempfile
 
 VOICE = os.getenv("TTS_VOICE", "de-DE-FlorianMultilingualNeural")
-RATE  = os.getenv("TTS_RATE",  "-5%")   # leicht langsamer = klarer und wärmer
-PITCH = os.getenv("TTS_PITCH", "-4Hz")  # minimal tiefer = Jarvis-Charakter
+RATE  = os.getenv("TTS_RATE",  "-5%")
+PITCH = os.getenv("TTS_PITCH", "-4Hz")
 
 
 def clean_text(text: str) -> str:
     """Bereinigt Text für natürliche Sprachausgabe."""
-    # Markdown entfernen
     text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
     text = re.sub(r'#{1,6}\s*', '', text)
-    text = re.sub(r'`{1,3}(.*?)`{1,3}', r'\1', text)
+    text = re.sub(r'`{1,3}.*?`{1,3}', '', text, flags=re.DOTALL)
     text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
-    # Aufzählungszeichen entfernen
     text = re.sub(r'^\s*[-•*]\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
-    # URLs entfernen
     text = re.sub(r'https?://\S+', '', text)
-    # Emojis entfernen
     text = re.sub(r'[^\w\s.,!?;:\-äöüÄÖÜß\'\"()\n]', '', text)
-    # Mehrfache Leerzeichen/Zeilenumbrüche normalisieren
     text = re.sub(r'\n+', '. ', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
-def speak(text: str):
-    provider = os.getenv("TTS_PROVIDER", "edge")
+def to_ssml(text: str) -> str:
+    """Wandelt Text in SSML um für natürliche Intonation."""
     text = clean_text(text)
     if not text:
+        return ""
+
+    # Sätze aufteilen und mit natürlichen Pausen versehen
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    ssml_parts = []
+
+    for sentence in sentences:
+        s = sentence.strip()
+        if not s:
+            continue
+
+        # Fragen: Tonhöhe am Ende leicht anheben
+        if s.endswith('?'):
+            ssml_parts.append(
+                f'<prosody pitch="+8Hz" rate="-3%">{s}</prosody>'
+                f'<break time="400ms"/>'
+            )
+        # Ausrufe: etwas schneller und höher
+        elif s.endswith('!'):
+            ssml_parts.append(
+                f'<prosody pitch="+4Hz" rate="+5%">{s}</prosody>'
+                f'<break time="350ms"/>'
+            )
+        # Normale Sätze: natürliche Pause
+        else:
+            ssml_parts.append(
+                f'<prosody>{s}</prosody>'
+                f'<break time="300ms"/>'
+            )
+
+    inner = ' '.join(ssml_parts)
+    return (
+        f'<speak xmlns="http://www.w3.org/2001/10/synthesis" '
+        f'xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="de-DE">'
+        f'<voice name="{VOICE}">'
+        f'<prosody rate="{RATE}" pitch="{PITCH}">'
+        f'{inner}'
+        f'</prosody></voice></speak>'
+    )
+
+
+def speak(text: str):
+    provider = os.getenv("TTS_PROVIDER", "edge")
+    if not text or not text.strip():
         return
     if provider == "elevenlabs":
-        _speak_elevenlabs(text)
+        _speak_elevenlabs(clean_text(text))
     elif provider == "macos":
-        _speak_macos(text)
+        _speak_macos(clean_text(text))
     else:
-        _speak_edge(text)
+        _speak_edge_ssml(text)
 
 
-def _speak_edge(text: str):
-    """Microsoft Edge TTS — klares, natürliches Deutsch."""
+def _speak_edge_ssml(text: str):
+    """Edge TTS mit SSML für natürliche Intonation."""
     import edge_tts
 
+    ssml = to_ssml(text)
+    if not ssml:
+        return
+
     async def _run():
-        communicate = edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH)
+        communicate = edge_tts.Communicate(ssml, VOICE)
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             tmp_path = f.name
         await communicate.save(tmp_path)
@@ -60,7 +103,7 @@ def _speak_edge(text: str):
 
 def _speak_macos(text: str):
     clean = text.replace('"', "'")
-    subprocess.run(["say", "-v", "Anna", "-r", "170", clean], check=False)
+    subprocess.run(["say", "-v", "Anna", "-r", "165", clean], check=False)
 
 
 def _speak_elevenlabs(text: str):
@@ -75,7 +118,7 @@ def _speak_elevenlabs(text: str):
         json={
             "text": text,
             "model_id": "eleven_turbo_v2",
-            "voice_settings": {"stability": 0.6, "similarity_boost": 0.8},
+            "voice_settings": {"stability": 0.55, "similarity_boost": 0.8},
         },
     )
     if response.status_code == 200:
@@ -85,7 +128,7 @@ def _speak_elevenlabs(text: str):
         subprocess.run(["afplay", tmp_path], check=False)
         os.unlink(tmp_path)
     else:
-        _speak_edge(text)
+        _speak_edge_ssml(text)
 
 
 def speak_async(text: str):

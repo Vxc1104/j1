@@ -24,6 +24,7 @@ from integrations import news
 from integrations import files
 from integrations import weather
 from integrations import reminders
+from integrations import search
 from brain.memory import save_memory, forget_memory, get_memory_summary
 
 TOOLS = [
@@ -259,6 +260,36 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Sucht aktuelle Informationen im Internet. Nutze dieses Tool immer wenn der Nutzer nach aktuellen Fakten, Preisen, Personen, Ereignissen oder allem fragt was du nicht sicher weißt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Die Suchanfrage auf Deutsch oder Englisch"},
+                    "max_results": {"type": "integer", "description": "Anzahl Ergebnisse (Standard: 5)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_news",
+            "description": "Sucht aktuelle Nachrichten zu einem bestimmten Thema im Internet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Thema oder Suchbegriff"},
+                    "max_results": {"type": "integer", "description": "Anzahl Ergebnisse (Standard: 5)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -355,6 +386,14 @@ def execute_tool(name: str, args: dict) -> str:
 
         elif name == "recall_memory":
             return get_memory_summary()
+
+        elif name == "web_search":
+            results = search.web_search(args["query"], args.get("max_results", 5))
+            return json.dumps(results, ensure_ascii=False)
+
+        elif name == "search_news":
+            results = search.search_news(args["query"], args.get("max_results", 5))
+            return json.dumps(results, ensure_ascii=False)
 
         else:
             return json.dumps({"error": f"Unbekanntes Tool: {name}"})
