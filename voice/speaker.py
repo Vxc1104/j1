@@ -1,27 +1,47 @@
 import os
 import subprocess
 import threading
+import asyncio
+import tempfile
+
+
+VOICE = os.getenv("TTS_VOICE", "de-DE-ConradNeural")
+RATE = os.getenv("TTS_RATE", "-5%")   # etwas langsamer = ruhiger
+PITCH = os.getenv("TTS_PITCH", "-8Hz") # tiefer = Jarvis-Feeling
 
 
 def speak(text: str):
-    """Speak text using configured TTS provider."""
-    provider = os.getenv("TTS_PROVIDER", "macos")
+    provider = os.getenv("TTS_PROVIDER", "edge")
     if provider == "elevenlabs":
         _speak_elevenlabs(text)
-    else:
+    elif provider == "macos":
         _speak_macos(text)
+    else:
+        _speak_edge(text)
+
+
+def _speak_edge(text: str):
+    """Microsoft Edge TTS — natürliche, menschliche Stimme (kostenlos)."""
+    import edge_tts
+
+    async def _run():
+        communicate = edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            tmp_path = f.name
+        await communicate.save(tmp_path)
+        subprocess.run(["afplay", tmp_path], check=False)
+        os.unlink(tmp_path)
+
+    asyncio.run(_run())
 
 
 def _speak_macos(text: str):
-    """Use macOS built-in TTS."""
     clean = text.replace('"', "'")
     subprocess.run(["say", "-v", "Daniel", "-r", "185", clean], check=False)
 
 
 def _speak_elevenlabs(text: str):
-    """Use ElevenLabs TTS."""
     import requests
-    import tempfile
     import sounddevice as sd
     import soundfile as sf
 
@@ -43,9 +63,8 @@ def _speak_elevenlabs(text: str):
         sd.wait()
         os.unlink(tmp_path)
     else:
-        _speak_macos(text)
+        _speak_edge(text)
 
 
 def speak_async(text: str):
-    """Speak in background thread."""
     threading.Thread(target=speak, args=(text,), daemon=True).start()
