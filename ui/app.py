@@ -264,10 +264,11 @@ class J1App(ctk.CTk):
     def _do_greet(self):
         import random
         greetings = [
-            "Guten Tag — J1 ist einsatzbereit. Was kann ich für Sie tun?",
+            "Guten Tag, J1 ist einsatzbereit. Was kann ich für Sie tun?",
             "Alles bereit. Womit kann ich Ihnen heute helfen?",
-            "J1 hier. Ich bin online — was steht an?",
+            "J1 hier, ich bin online. Was steht an?",
             "Guten Tag. Alle Systeme laufen. Was brauchen Sie?",
+            "Bereit. Schießen Sie los.",
         ]
         answer = random.choice(greetings)
         self.after(0, lambda: self._add_message("assistant", answer))
