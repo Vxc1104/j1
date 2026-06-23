@@ -286,7 +286,8 @@ class J1App(ctk.CTk):
             self._set_status("Spricht...", ACCENT)
             speak(briefing)
         except Exception as e:
-            self.after(0, lambda: self._add_message("assistant", f"Briefing Fehler: {e}"))
+            err = str(e)
+            self.after(0, lambda m=err: self._add_message("assistant", f"Briefing Fehler: {m}"))
         finally:
             self._set_status("Bereit")
 
@@ -403,11 +404,12 @@ class J1App(ctk.CTk):
         self._set_status("J1 denkt...", YELLOW)
         try:
             answer, self.history = chat(text, self.history)
-            self.after(0, lambda: self._add_message("assistant", answer))
+            self.after(0, lambda a=answer: self._add_message("assistant", a))
             self._set_status("Spricht...", ACCENT)
             speak(answer)
         except Exception as e:
-            self.after(0, lambda: self._add_message("assistant", f"Fehler: {e}"))
+            err = str(e)
+            self.after(0, lambda m=err: self._add_message("assistant", f"Fehler: {m}"))
         finally:
             self._set_status("Bereit")
 

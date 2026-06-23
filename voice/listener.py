@@ -14,7 +14,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def record_audio(duration: int = 5) -> np.ndarray:
     """Record audio from microphone."""
-    print(f"[J1] Höre zu... ({duration}s)")
+    pass  # status via UI
     audio = sd.rec(
         int(duration * SAMPLE_RATE),
         samplerate=SAMPLE_RATE,
@@ -33,7 +33,7 @@ def record_until_silence(silence_threshold: float = 0.01, max_duration: int = 30
     max_silent_chunks = 4  # 2 seconds of silence
 
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16") as stream:
-        print("[J1] Spreche...")
+        pass
         while len(audio_chunks) * chunk_size < SAMPLE_RATE * max_duration:
             chunk, _ = stream.read(chunk_size)
             audio_chunks.append(chunk.copy())
