@@ -371,8 +371,10 @@ class J1App(ctk.CTk):
                 audio = record_until_silence()
                 if not self.conversation_active:
                     break
-                # Nochmal prüfen — kein Echo aufnehmen
                 if is_speaking():
+                    continue
+                # None = kein echtes Sprechen erkannt
+                if audio is None:
                     continue
                 self.after(0, lambda: self._set_status("Transkribiere...", YELLOW))
                 text = transcribe(audio)
@@ -381,7 +383,8 @@ class J1App(ctk.CTk):
                 self.after(0, lambda t=text: self._add_message("user", t))
                 self._process_message(text)
             except Exception as e:
-                self.after(0, lambda err=e: self._set_status(f"Fehler: {err}", RED))
+                err = str(e)
+                self.after(0, lambda m=err: self._set_status(f"Fehler: {m}", RED))
                 break
 
         self.is_listening = False

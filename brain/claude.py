@@ -57,40 +57,66 @@ def chat(user_message: str, history: list[dict] = None) -> tuple[str, list[dict]
         return _claude_chat(messages)
 
 
+_TOOL_KEYWORDS = {
+    "wetter", "news", "nachrichten", "kalender", "termin", "mail", "email",
+    "suche", "such", "finde", "internet", "aktuell", "heute", "morgen",
+    "notion", "erinnerung", "erinner", "reminder", "workflow",
+    "was passiert", "was läuft", "was gibt", "wie ist",
+}
+
+
+def _needs_tools(text: str) -> bool:
+    low = text.lower()
+    return any(kw in low for kw in _TOOL_KEYWORDS)
+
+
 def _groq_chat(client: Groq, messages: list[dict]) -> tuple[str, list[dict]]:
-    # Fast model for conversation, full model for tool use
     fast_model = os.getenv("LLM_MODEL_FAST", "llama-3.1-8b-instant")
     full_model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    sys = [{"role": "system", "content": get_system_prompt()}]
 
+    last_user = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "user"
+         and isinstance(m.get("content"), str)), ""
+    )
+
+    # Schneller Pfad: kein Tool-Aufruf nötig → direkt mit kleinem Modell
+    if not _needs_tools(last_user):
+        resp = client.chat.completions.create(
+            model=fast_model,
+            messages=sys + messages,
+            max_tokens=250,
+        )
+        answer = resp.choices[0].message.content
+        messages.append({"role": "assistant", "content": answer})
+        save_history(messages)
+        return answer, messages
+
+    # Tool-Pfad: großes Modell mit Tool-Aufruf
     response = client.chat.completions.create(
         model=full_model,
-        messages=[{"role": "system", "content": get_system_prompt()}] + messages,
+        messages=sys + messages,
         tools=TOOLS,
         tool_choice="auto",
         max_tokens=300,
     )
-
     msg = response.choices[0].message
 
     if msg.tool_calls:
         messages.append({"role": "assistant", "content": msg.content, "tool_calls": [
-            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+            {"id": tc.id, "type": "function",
+             "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
             for tc in msg.tool_calls
         ]})
-
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments)
             result = execute_tool(tc.function.name, args)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result,
-            })
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         final = client.chat.completions.create(
             model=fast_model,
-            messages=[{"role": "system", "content": get_system_prompt()}] + messages,
-            max_tokens=300,
+            messages=sys + messages,
+            max_tokens=250,
         )
         answer = final.choices[0].message.content
     else:
